@@ -30,6 +30,9 @@ final class PreviewViewController: UIViewController {
       cameraSession.startRunning()
     }
     playerView.delegate = self
+      
+      try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
+      try? AVAudioSession.sharedInstance().setActive(true)
   }
   
   private func play() throws {

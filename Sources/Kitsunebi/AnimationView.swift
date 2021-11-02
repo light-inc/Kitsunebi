@@ -7,6 +7,7 @@
 
 import MetalKit
 import UIKit
+import AVFAudio
 
 public protocol PlayerViewDelegate: AnyObject {
   func playerView(_ playerView: PlayerView, didUpdateFrame index: Int)
@@ -27,6 +28,8 @@ open class PlayerView: UIView {
 
   public weak var delegate: PlayerViewDelegate? = nil
   internal var engineInstance: VideoEngine? = nil
+    
+    private var audioPlayer: AVAudioPlayer?
 
   public func play(base baseVideoURL: URL, alpha alphaVideoURL: URL, fps: Int) throws {
     engineInstance?.purge()
@@ -34,6 +37,9 @@ open class PlayerView: UIView {
     engineInstance?.updateDelegate = self
     engineInstance?.delegate = self
     try engineInstance?.play()
+      
+      audioPlayer = try? AVAudioPlayer(contentsOf: baseVideoURL)
+      audioPlayer?.play()
   }
 
   public func play(hevcWithAlpha hevcWithAlphaVideoURL: URL, fps: Int) throws {
@@ -230,9 +236,11 @@ extension PlayerView: VideoEngineDelegate {
 extension PlayerView: ApplicationHandlerDelegate {
   func didBecomeActive(_ notification: Notification) {
     engineInstance?.resume()
+      audioPlayer?.play()
   }
 
   func willResignActive(_ notification: Notification) {
     engineInstance?.pause()
+      audioPlayer?.pause()
   }
 }
