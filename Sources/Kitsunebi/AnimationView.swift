@@ -49,6 +49,15 @@ open class PlayerView: UIView {
     engineInstance?.delegate = self
     try engineInstance?.play()
   }
+    
+    public var volume: Float {
+        set {
+            audioPlayer?.volume = newValue
+        }
+        get {
+            audioPlayer?.volume ?? 0.0
+        }
+    }
 
   public init?(frame: CGRect, device: MTLDevice? = MTLCreateSystemDefaultDevice()) {
     guard let device = device else { return nil }
