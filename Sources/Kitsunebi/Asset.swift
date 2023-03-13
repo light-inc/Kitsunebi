@@ -25,7 +25,8 @@ final class Asset {
   var status: AVAssetReader.Status? { reader?.status }
 
   init(url: URL, pixelFormatType: OSType? = nil) {
-    self.asset = AVURLAsset(url: url)
+    let options = [AVURLAssetAllowsCellularAccessKey: false]
+    self.asset = AVURLAsset(url: url, options: options)
     self.pixelFormatType = pixelFormatType
   }
 
