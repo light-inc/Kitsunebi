@@ -113,11 +113,13 @@ internal class VideoEngine: NSObject {
   }
 
   private func finish() {
-    displayLink.isPaused = true
-    fpsKeeper.clear()
-    updateDelegate?.didCompleted()
-    delegate?.engineDidFinishPlaying(self)
-    purge()
+      DispatchQueue.main.async{
+        self.displayLink.isPaused = true
+        self.fpsKeeper.clear()
+        self.updateDelegate?.didCompleted()
+        self.delegate?.engineDidFinishPlaying(self)
+        self.purge()
+      }
   }
 
   @objc private func update(_ link: CADisplayLink) {
