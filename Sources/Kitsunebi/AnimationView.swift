@@ -10,6 +10,7 @@ import UIKit
 
 public protocol PlayerViewDelegate: AnyObject {
   func playerView(_ playerView: PlayerView, didUpdateFrame index: Int)
+  func didError(_ playerView: PlayerView, error: Swift.Error?)
   func didFinished(_ playerView: PlayerView)
 }
 
@@ -225,6 +226,7 @@ extension PlayerView: VideoEngineUpdateDelegate {
   }
 
   internal func didReceiveError(_ error: Swift.Error?) {
+    delegate?.didError(self, error: error)
     guard applicationHandler.isActive else { return }
     clear()
   }
