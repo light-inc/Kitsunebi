@@ -9,9 +9,9 @@ import AVFoundation
 import CoreImage
 
 internal protocol VideoEngineUpdateDelegate: AnyObject {
-  func didOutputFrame(_ frame: Frame)
-  func didReceiveError(_ error: Swift.Error?)
-  func didCompleted()
+  func didOutputFrame(_ frame: Frame, engine: VideoEngine)
+  func didReceiveError(_ error: Swift.Error?, engine: VideoEngine)
+  func didCompleted(engine: VideoEngine)
 }
 
 internal protocol VideoEngineDelegate: AnyObject {
@@ -137,7 +137,7 @@ internal class VideoEngine: NSObject {
     wantsRunning = false
     DispatchQueue.main.async {
       self.fpsKeeper.clear()
-      self.updateDelegate?.didCompleted()
+      self.updateDelegate?.didCompleted(engine: self)
       self.delegate?.engineDidFinishPlaying(self)
       self.purge()
     }
@@ -172,14 +172,14 @@ internal class VideoEngine: NSObject {
     }
     do {
       let frame = try copyNextFrame()
-      updateDelegate?.didOutputFrame(frame)
+      updateDelegate?.didOutputFrame(frame, engine: self)
 
       currentFrameIndex += 1
       delegate?.didUpdateFrame(currentFrameIndex, engine: self)
     } catch (let error) {
       // 最後まで読み終えた場合も例外で戻るため、正常終了はエラーとして通知しない
       if !isEndOfStream(error) {
-        updateDelegate?.didReceiveError(error)
+        updateDelegate?.didReceiveError(error, engine: self)
       }
       finish()
     }
