@@ -80,8 +80,9 @@ internal class VideoEngine: NSObject {
     }
     while isRunningTheread {
       // play()などがこのスレッドより先に呼ばれても一時停止のまま固着しないよう、期待状態との差分をここで解消する
-      if displayLink.isPaused == wantsRunning {
-        displayLink.isPaused = !wantsRunning
+      let shouldPause = !wantsRunning
+      if displayLink.isPaused != shouldPause {
+        displayLink.isPaused = shouldPause
       }
       RunLoop.current.run(until: Date(timeIntervalSinceNow: 1 / 60))
     }
@@ -132,13 +133,14 @@ internal class VideoEngine: NSObject {
   }
 
   private func finish() {
-      wantsRunning = false
-      DispatchQueue.main.async{
-        self.fpsKeeper.clear()
-        self.updateDelegate?.didCompleted()
-        self.delegate?.engineDidFinishPlaying(self)
-        self.purge()
-      }
+    // 終了直後にdisplay linkがもう一度発火しても終了通知が二重に飛ばないよう、main待ちにせず同期的に落とす
+    wantsRunning = false
+    DispatchQueue.main.async {
+      self.fpsKeeper.clear()
+      self.updateDelegate?.didCompleted()
+      self.delegate?.engineDidFinishPlaying(self)
+      self.purge()
+    }
   }
 
   @objc private func update(_ link: CADisplayLink) {
@@ -175,7 +177,7 @@ internal class VideoEngine: NSObject {
       currentFrameIndex += 1
       delegate?.didUpdateFrame(currentFrameIndex, engine: self)
     } catch (let error) {
-      // 最後まで読み終えた場合もreaderがnilを返すため、正常終了はエラーとして通知しない
+      // 最後まで読み終えた場合も例外で戻るため、正常終了はエラーとして通知しない
       if !isEndOfStream(error) {
         updateDelegate?.didReceiveError(error)
       }
@@ -185,8 +187,10 @@ internal class VideoEngine: NSObject {
 
   /// 読み込み済みのフレームを出し切った(EOF)ことによるエラーかどうか
   private func isEndOfStream(_ error: Swift.Error) -> Bool {
-    guard case AssetError.readerNotReturnedImage = error else { return false }
-    return isCompleted
+    if case AssetError.readerReachedEnd = error {
+      return true
+    }
+    return false
   }
 
   private func copyNextFrame() throws -> Frame {

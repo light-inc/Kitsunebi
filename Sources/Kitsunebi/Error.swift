@@ -16,6 +16,8 @@ public enum Error: Swift.Error {
 internal enum AssetError: Swift.Error {
   case readerWasStopped
   case readerNotReturnedImage
+  /// 最終フレームまで読み切った正常終了。再生失敗と区別するため独立したケースにしている
+  case readerReachedEnd
 }
 
 internal enum RenderError: Swift.Error {
