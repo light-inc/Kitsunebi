@@ -32,6 +32,21 @@ internal class VideoEngine: NSObject {
   internal weak var delegate: VideoEngineDelegate? = nil
   internal weak var updateDelegate: VideoEngineUpdateDelegate? = nil
   private var isRunningTheread = true
+  private let wantsRunningLock = NSLock()
+  private var _wantsRunning = false
+  /// displayLinkを動かしたいかどうか。`displayLink.isPaused`への反映は描画スレッドに集約するため、他スレッドからはこのフラグのみを更新する
+  private var wantsRunning: Bool {
+    get {
+      wantsRunningLock.lock()
+      defer { wantsRunningLock.unlock() }
+      return _wantsRunning
+    }
+    set {
+      wantsRunningLock.lock()
+      _wantsRunning = newValue
+      wantsRunningLock.unlock()
+    }
+  }
   private lazy var renderThread: Thread = .init(
     target: WeakProxy(target: self), selector: #selector(VideoEngine.threadLoop), object: nil)
   private lazy var currentFrameIndex: Int = 0
@@ -57,13 +72,17 @@ internal class VideoEngine: NSObject {
 
   @objc private func threadLoop() {
     displayLink.add(to: .current, forMode: .common)
-    displayLink.isPaused = true
+    displayLink.isPaused = !wantsRunning
     if #available(iOS 10.0, *) {
       displayLink.preferredFramesPerSecond = 0
     } else {
       displayLink.frameInterval = 1
     }
     while isRunningTheread {
+      // play()などがこのスレッドより先に呼ばれても一時停止のまま固着しないよう、期待状態との差分をここで解消する
+      if displayLink.isPaused == wantsRunning {
+        displayLink.isPaused = !wantsRunning
+      }
       RunLoop.current.run(until: Date(timeIntervalSinceNow: 1 / 60))
     }
   }
@@ -99,22 +118,22 @@ internal class VideoEngine: NSObject {
 
   public func play() throws {
     try reset()
-    displayLink.isPaused = false
+    wantsRunning = true
   }
 
   public func pause() {
     guard !isCompleted else { return }
-    displayLink.isPaused = true
+    wantsRunning = false
   }
 
   public func resume() {
     guard !isCompleted else { return }
-    displayLink.isPaused = false
+    wantsRunning = true
   }
 
   private func finish() {
+      wantsRunning = false
       DispatchQueue.main.async{
-        self.displayLink.isPaused = true
         self.fpsKeeper.clear()
         self.updateDelegate?.didCompleted()
         self.delegate?.engineDidFinishPlaying(self)
@@ -144,7 +163,7 @@ internal class VideoEngine: NSObject {
   }
 
   private func updateFrame() {
-    guard !displayLink.isPaused else { return }
+    guard wantsRunning else { return }
     if isCompleted {
       finish()
       return
@@ -156,9 +175,18 @@ internal class VideoEngine: NSObject {
       currentFrameIndex += 1
       delegate?.didUpdateFrame(currentFrameIndex, engine: self)
     } catch (let error) {
-      updateDelegate?.didReceiveError(error)
+      // 最後まで読み終えた場合もreaderがnilを返すため、正常終了はエラーとして通知しない
+      if !isEndOfStream(error) {
+        updateDelegate?.didReceiveError(error)
+      }
       finish()
     }
+  }
+
+  /// 読み込み済みのフレームを出し切った(EOF)ことによるエラーかどうか
+  private func isEndOfStream(_ error: Swift.Error) -> Bool {
+    guard case AssetError.readerNotReturnedImage = error else { return false }
+    return isCompleted
   }
 
   private func copyNextFrame() throws -> Frame {
