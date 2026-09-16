@@ -32,19 +32,19 @@ internal class VideoEngine: NSObject {
   internal weak var delegate: VideoEngineDelegate? = nil
   internal weak var updateDelegate: VideoEngineUpdateDelegate? = nil
   private var isRunningTheread = true
-  private let wantsRunningLock = NSLock()
-  private var _wantsRunning = false
-  /// displayLinkを動かしたいかどうか。`displayLink.isPaused`への反映は描画スレッドに集約するため、他スレッドからはこのフラグのみを更新する
-  private var wantsRunning: Bool {
+  private let displayLinkShouldPauseLock = NSLock()
+  private var _displayLinkShouldPause = true
+  /// displayLinkを一時停止したいかどうか。`displayLink.isPaused`への反映は描画スレッドに集約するため、他スレッドからはこのフラグのみを更新する
+  private var displayLinkShouldPause: Bool {
     get {
-      wantsRunningLock.lock()
-      defer { wantsRunningLock.unlock() }
-      return _wantsRunning
+      displayLinkShouldPauseLock.lock()
+      defer { displayLinkShouldPauseLock.unlock() }
+      return _displayLinkShouldPause
     }
     set {
-      wantsRunningLock.lock()
-      _wantsRunning = newValue
-      wantsRunningLock.unlock()
+      displayLinkShouldPauseLock.lock()
+      _displayLinkShouldPause = newValue
+      displayLinkShouldPauseLock.unlock()
     }
   }
   private lazy var renderThread: Thread = .init(
@@ -72,7 +72,7 @@ internal class VideoEngine: NSObject {
 
   @objc private func threadLoop() {
     displayLink.add(to: .current, forMode: .common)
-    displayLink.isPaused = !wantsRunning
+    displayLink.isPaused = displayLinkShouldPause
     if #available(iOS 10.0, *) {
       displayLink.preferredFramesPerSecond = 0
     } else {
@@ -80,7 +80,7 @@ internal class VideoEngine: NSObject {
     }
     while isRunningTheread {
       // play()などがこのスレッドより先に呼ばれても一時停止のまま固着しないよう、期待状態との差分をここで解消する
-      let shouldPause = !wantsRunning
+      let shouldPause = displayLinkShouldPause
       if displayLink.isPaused != shouldPause {
         displayLink.isPaused = shouldPause
       }
@@ -119,22 +119,22 @@ internal class VideoEngine: NSObject {
 
   public func play() throws {
     try reset()
-    wantsRunning = true
+    displayLinkShouldPause = false
   }
 
   public func pause() {
     guard !isCompleted else { return }
-    wantsRunning = false
+    displayLinkShouldPause = true
   }
 
   public func resume() {
     guard !isCompleted else { return }
-    wantsRunning = true
+    displayLinkShouldPause = false
   }
 
   private func finish() {
     // 終了直後にdisplay linkがもう一度発火しても終了通知が二重に飛ばないよう、main待ちにせず同期的に落とす
-    wantsRunning = false
+    displayLinkShouldPause = true
     DispatchQueue.main.async {
       self.fpsKeeper.clear()
       self.updateDelegate?.didCompleted()
@@ -165,7 +165,7 @@ internal class VideoEngine: NSObject {
   }
 
   private func updateFrame() {
-    guard wantsRunning else { return }
+    guard !displayLinkShouldPause else { return }
     if isCompleted {
       finish()
       return
