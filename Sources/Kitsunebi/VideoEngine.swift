@@ -9,7 +9,7 @@ import AVFoundation
 import CoreImage
 
 internal protocol VideoEngineUpdateDelegate: AnyObject {
-  func didOutputFrame(_ frame: Frame, engine: VideoEngine)
+  func didOutputFrame(_ frame: Frame)
   func didReceiveError(_ error: Swift.Error?, engine: VideoEngine)
   func didCompleted(engine: VideoEngine)
 }
@@ -95,6 +95,8 @@ internal class VideoEngine: NSObject {
 
   func purge() {
     isRunningTheread = false
+    // 破棄後に残った1周分のupdateで通知が飛ばないよう、期待状態も停止側へ倒す
+    displayLinkShouldPause = true
   }
 
   private func reset() throws {
@@ -172,12 +174,16 @@ internal class VideoEngine: NSObject {
     }
     do {
       let frame = try copyNextFrame()
-      updateDelegate?.didOutputFrame(frame, engine: self)
+      updateDelegate?.didOutputFrame(frame)
 
       currentFrameIndex += 1
       delegate?.didUpdateFrame(currentFrameIndex, engine: self)
     } catch (let error) {
-      updateDelegate?.didReceiveError(error, engine: self)
+      // engineの差し替えはmainで起きるため、照合を同じスレッドで行えるよう通知もmainへ揃える
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.updateDelegate?.didReceiveError(error, engine: self)
+      }
       finish()
     }
   }
