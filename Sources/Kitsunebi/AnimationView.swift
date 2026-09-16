@@ -49,8 +49,7 @@ open class PlayerView: UIView {
 
   /// 現在保持しているengineからの通知かどうか。
   /// purge()はスレッドの停止のみでdelegateを切らず、finish()のmain待ちブロックがengineを強参照したまま残るため、
-  /// play()で差し替えられた後に古いengineの通知が届き得る。これを次の再生への通知と取り違えないよう照合する。
-  /// engineInstanceの差し替えはmainで行うため、mainから届く通知に対してのみ使う
+  /// play()で差し替えられた後に古いengineの通知が届き得る。これを次の再生への通知と取り違えないよう照合する
   private func isCurrentEngine(_ engine: VideoEngine) -> Bool {
     engine === engineInstance
   }
@@ -219,7 +218,8 @@ open class PlayerView: UIView {
 }
 
 extension PlayerView: VideoEngineUpdateDelegate {
-  internal func didOutputFrame(_ frame: Frame) {
+  internal func didOutputFrame(_ frame: Frame, engine: VideoEngine) {
+    guard isCurrentEngine(engine) else { return }
     guard applicationHandler.isActive else { return }
     
     renderQueue.async { [weak self] in
@@ -249,6 +249,7 @@ extension PlayerView: VideoEngineUpdateDelegate {
 
 extension PlayerView: VideoEngineDelegate {
   internal func didUpdateFrame(_ index: Int, engine: VideoEngine) {
+    guard isCurrentEngine(engine) else { return }
     delegate?.playerView(self, didUpdateFrame: index)
   }
 
