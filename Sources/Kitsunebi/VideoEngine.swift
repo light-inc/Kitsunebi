@@ -79,7 +79,7 @@ internal class VideoEngine: NSObject {
       displayLink.frameInterval = 1
     }
     while isRunningTheread {
-      // play()などがこのスレッドより先に呼ばれても一時停止のまま固着しないよう、期待状態との差分をここで解消する
+      // play()などがこのスレッドより先に呼ばれても一時停止のままロックされないよう、期待状態との差分をここで解消する
       let shouldPause = displayLinkShouldPause
       if displayLink.isPaused != shouldPause {
         displayLink.isPaused = shouldPause
