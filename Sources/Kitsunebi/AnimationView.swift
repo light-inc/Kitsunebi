@@ -47,13 +47,6 @@ open class PlayerView: UIView {
     try engineInstance?.play()
   }
 
-  /// 現在保持しているengineからの通知かどうか。
-  /// purge()はスレッドの停止のみでdelegateを切らず、finish()のmain待ちブロックがengineを強参照したまま残るため、
-  /// play()で差し替えられた後に古いengineの通知が届き得る。これを次の再生への通知と取り違えないよう照合する
-  private func isCurrentEngine(_ engine: VideoEngine) -> Bool {
-    engine === engineInstance
-  }
-
   public init?(frame: CGRect, device: MTLDevice? = MTLCreateSystemDefaultDevice()) {
     guard let device = device else { return nil }
     guard let commandQueue = device.makeCommandQueue() else { return nil }
@@ -218,8 +211,7 @@ open class PlayerView: UIView {
 }
 
 extension PlayerView: VideoEngineUpdateDelegate {
-  internal func didOutputFrame(_ frame: Frame, engine: VideoEngine) {
-    guard isCurrentEngine(engine) else { return }
+  internal func didOutputFrame(_ frame: Frame) {
     guard applicationHandler.isActive else { return }
     
     renderQueue.async { [weak self] in
@@ -233,15 +225,13 @@ extension PlayerView: VideoEngineUpdateDelegate {
     }
   }
 
-  internal func didReceiveError(_ error: Swift.Error?, engine: VideoEngine) {
-    guard isCurrentEngine(engine) else { return }
+  internal func didReceiveError(_ error: Swift.Error?) {
     delegate?.didError(self, error: error)
     guard applicationHandler.isActive else { return }
     clear()
   }
 
-  internal func didCompleted(engine: VideoEngine) {
-    guard isCurrentEngine(engine) else { return }
+  internal func didCompleted() {
     guard applicationHandler.isActive else { return }
     clear()
   }
@@ -249,12 +239,10 @@ extension PlayerView: VideoEngineUpdateDelegate {
 
 extension PlayerView: VideoEngineDelegate {
   internal func didUpdateFrame(_ index: Int, engine: VideoEngine) {
-    guard isCurrentEngine(engine) else { return }
     delegate?.playerView(self, didUpdateFrame: index)
   }
 
   internal func engineDidFinishPlaying(_ engine: VideoEngine) {
-    guard isCurrentEngine(engine) else { return }
     delegate?.didFinished(self)
   }
 }
