@@ -9,9 +9,9 @@ import AVFoundation
 import CoreImage
 
 internal protocol VideoEngineUpdateDelegate: AnyObject {
-  func didOutputFrame(_ frame: Frame)
-  func didReceiveError(_ error: Swift.Error?)
-  func didCompleted()
+  func didOutputFrame(_ frame: Frame, engine: VideoEngine)
+  func didReceiveError(_ error: Swift.Error?, engine: VideoEngine)
+  func didCompleted(engine: VideoEngine)
 }
 
 internal protocol VideoEngineDelegate: AnyObject {
@@ -27,8 +27,6 @@ enum VideoEngineAsset {
 internal class VideoEngine: NSObject {
   private let asset: VideoEngineAsset
   private let fpsKeeper: FPSKeeper
-  private lazy var displayLink: CADisplayLink = .init(
-    target: WeakProxy(target: self), selector: #selector(VideoEngine.update))
   internal weak var delegate: VideoEngineDelegate? = nil
   internal weak var updateDelegate: VideoEngineUpdateDelegate? = nil
   private var isRunningTheread = true
@@ -70,7 +68,12 @@ internal class VideoEngine: NSObject {
     renderThread.start()
   }
 
+  /// displayLinkの生成から破棄までをこのスレッド内で完結させる。
+  /// プロパティとして遅延生成すると、描画スレッドが動く前に破棄された場合にdeinitから生成が走り、
+  /// 破棄中のselfへweak参照を張ろうとしてクラッシュする
   @objc private func threadLoop() {
+    let displayLink = CADisplayLink(
+      target: WeakProxy(target: self), selector: #selector(VideoEngine.update))
     displayLink.add(to: .current, forMode: .common)
     displayLink.isPaused = displayLinkShouldPause
     if #available(iOS 10.0, *) {
@@ -86,15 +89,12 @@ internal class VideoEngine: NSObject {
       }
       RunLoop.current.run(until: Date(timeIntervalSinceNow: 1 / 60))
     }
+    displayLink.remove(from: .current, forMode: .common)
+    displayLink.invalidate()
   }
 
   func purge() {
     isRunningTheread = false
-  }
-
-  deinit {
-    displayLink.remove(from: .current, forMode: .common)
-    displayLink.invalidate()
   }
 
   private func reset() throws {
@@ -137,7 +137,7 @@ internal class VideoEngine: NSObject {
     displayLinkShouldPause = true
     DispatchQueue.main.async {
       self.fpsKeeper.clear()
-      self.updateDelegate?.didCompleted()
+      self.updateDelegate?.didCompleted(engine: self)
       self.delegate?.engineDidFinishPlaying(self)
       self.purge()
     }
@@ -172,12 +172,12 @@ internal class VideoEngine: NSObject {
     }
     do {
       let frame = try copyNextFrame()
-      updateDelegate?.didOutputFrame(frame)
+      updateDelegate?.didOutputFrame(frame, engine: self)
 
       currentFrameIndex += 1
       delegate?.didUpdateFrame(currentFrameIndex, engine: self)
     } catch (let error) {
-      updateDelegate?.didReceiveError(error)
+      updateDelegate?.didReceiveError(error, engine: self)
       finish()
     }
   }
