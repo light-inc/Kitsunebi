@@ -57,16 +57,12 @@ final class Asset {
     if status != .reading {
       throw AssetError.readerWasStopped
     }
-    // 最終フレームまで読み切った場合もnilが返るため、readerのerror有無で正常終了とデコード失敗を分ける
-    guard let sampleBuffer = output?.copyNextSampleBuffer() else {
-      if let error = reader?.error {
-        throw error
-      }
-      throw AssetError.readerReachedEnd
-    }
-    guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+    if let sampleBuffer = output?.copyNextSampleBuffer(),
+      let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+    {
+      return imageBuffer
+    } else {
       throw AssetError.readerNotReturnedImage
     }
-    return imageBuffer
   }
 }

@@ -177,20 +177,9 @@ internal class VideoEngine: NSObject {
       currentFrameIndex += 1
       delegate?.didUpdateFrame(currentFrameIndex, engine: self)
     } catch (let error) {
-      // 最後まで読み終えた場合も例外で戻るため、正常終了はエラーとして通知しない
-      if !isEndOfStream(error) {
-        updateDelegate?.didReceiveError(error)
-      }
+      updateDelegate?.didReceiveError(error)
       finish()
     }
-  }
-
-  /// 読み込み済みのフレームを出し切った(EOF)ことによるエラーかどうか
-  private func isEndOfStream(_ error: Swift.Error) -> Bool {
-    if case AssetError.readerReachedEnd = error {
-      return true
-    }
-    return false
   }
 
   private func copyNextFrame() throws -> Frame {
