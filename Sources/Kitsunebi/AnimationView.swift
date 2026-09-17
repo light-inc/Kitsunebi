@@ -47,15 +47,6 @@ open class PlayerView: UIView {
     try engineInstance?.play()
   }
 
-  /// 現在保持しているengineからの通知かどうか。
-  /// purge()はスレッドの停止のみでdelegateを切らず、finish()のmain待ちブロックがengineを強参照したまま残るため、
-  /// play()で差し替えられた後に古いengineの通知が届き得る。これを次の再生への通知と取り違えないよう照合する。
-  /// engineInstanceの差し替えはmainで行うため、mainから届く通知に対してのみ使う。
-  /// 描画スレッドから届く通知はpurge()が停止させるため照合しない
-  private func isCurrentEngine(_ engine: VideoEngine) -> Bool {
-    engine === engineInstance
-  }
-
   public init?(frame: CGRect, device: MTLDevice? = MTLCreateSystemDefaultDevice()) {
     guard let device = device else { return nil }
     guard let commandQueue = device.makeCommandQueue() else { return nil }
@@ -240,8 +231,7 @@ extension PlayerView: VideoEngineUpdateDelegate {
     clear()
   }
 
-  internal func didCompleted(engine: VideoEngine) {
-    guard isCurrentEngine(engine) else { return }
+  internal func didCompleted() {
     guard applicationHandler.isActive else { return }
     clear()
   }
@@ -253,7 +243,6 @@ extension PlayerView: VideoEngineDelegate {
   }
 
   internal func engineDidFinishPlaying(_ engine: VideoEngine) {
-    guard isCurrentEngine(engine) else { return }
     delegate?.didFinished(self)
   }
 }

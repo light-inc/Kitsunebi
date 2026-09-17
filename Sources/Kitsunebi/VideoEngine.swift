@@ -11,7 +11,7 @@ import CoreImage
 internal protocol VideoEngineUpdateDelegate: AnyObject {
   func didOutputFrame(_ frame: Frame)
   func didReceiveError(_ error: Swift.Error?)
-  func didCompleted(engine: VideoEngine)
+  func didCompleted()
 }
 
 internal protocol VideoEngineDelegate: AnyObject {
@@ -139,7 +139,7 @@ internal class VideoEngine: NSObject {
     displayLinkShouldPause = true
     DispatchQueue.main.async {
       self.fpsKeeper.clear()
-      self.updateDelegate?.didCompleted(engine: self)
+      self.updateDelegate?.didCompleted()
       self.delegate?.engineDidFinishPlaying(self)
       self.purge()
     }
