@@ -27,11 +27,24 @@ enum VideoEngineAsset {
 internal class VideoEngine: NSObject {
   private let asset: VideoEngineAsset
   private let fpsKeeper: FPSKeeper
-  private lazy var displayLink: CADisplayLink = .init(
-    target: WeakProxy(target: self), selector: #selector(VideoEngine.update))
   internal weak var delegate: VideoEngineDelegate? = nil
   internal weak var updateDelegate: VideoEngineUpdateDelegate? = nil
   private var isRunningTheread = true
+  private let displayLinkShouldPauseLock = NSLock()
+  private var _displayLinkShouldPause = true
+  /// displayLinkを一時停止したいかどうか。`displayLink.isPaused`への反映は描画スレッドに集約するため、他スレッドからはこのフラグのみを更新する
+  private var displayLinkShouldPause: Bool {
+    get {
+      displayLinkShouldPauseLock.lock()
+      defer { displayLinkShouldPauseLock.unlock() }
+      return _displayLinkShouldPause
+    }
+    set {
+      displayLinkShouldPauseLock.lock()
+      _displayLinkShouldPause = newValue
+      displayLinkShouldPauseLock.unlock()
+    }
+  }
   private lazy var renderThread: Thread = .init(
     target: WeakProxy(target: self), selector: #selector(VideoEngine.threadLoop), object: nil)
   private lazy var currentFrameIndex: Int = 0
@@ -55,26 +68,35 @@ internal class VideoEngine: NSObject {
     renderThread.start()
   }
 
+  /// displayLinkの生成から破棄までをこのスレッド内で完結させる。
+  /// プロパティとして遅延生成すると、描画スレッドが動く前に破棄された場合にdeinitから生成が走り、
+  /// 破棄中のselfへweak参照を張ろうとしてクラッシュする
   @objc private func threadLoop() {
+    let displayLink = CADisplayLink(
+      target: WeakProxy(target: self), selector: #selector(VideoEngine.update))
     displayLink.add(to: .current, forMode: .common)
-    displayLink.isPaused = true
+    displayLink.isPaused = displayLinkShouldPause
     if #available(iOS 10.0, *) {
       displayLink.preferredFramesPerSecond = 0
     } else {
       displayLink.frameInterval = 1
     }
     while isRunningTheread {
+      // play()などがこのスレッドより先に呼ばれても一時停止のままロックされないよう、期待状態との差分をここで解消する
+      let shouldPause = displayLinkShouldPause
+      if displayLink.isPaused != shouldPause {
+        displayLink.isPaused = shouldPause
+      }
       RunLoop.current.run(until: Date(timeIntervalSinceNow: 1 / 60))
     }
+    displayLink.remove(from: .current, forMode: .common)
+    displayLink.invalidate()
   }
 
   func purge() {
     isRunningTheread = false
-  }
-
-  deinit {
-    displayLink.remove(from: .current, forMode: .common)
-    displayLink.invalidate()
+    // 破棄後に残った1周分のupdateで通知が飛ばないよう、期待状態も停止側へ倒す
+    displayLinkShouldPause = true
   }
 
   private func reset() throws {
@@ -99,27 +121,28 @@ internal class VideoEngine: NSObject {
 
   public func play() throws {
     try reset()
-    displayLink.isPaused = false
+    displayLinkShouldPause = false
   }
 
   public func pause() {
     guard !isCompleted else { return }
-    displayLink.isPaused = true
+    displayLinkShouldPause = true
   }
 
   public func resume() {
     guard !isCompleted else { return }
-    displayLink.isPaused = false
+    displayLinkShouldPause = false
   }
 
   private func finish() {
-      DispatchQueue.main.async{
-        self.displayLink.isPaused = true
-        self.fpsKeeper.clear()
-        self.updateDelegate?.didCompleted()
-        self.delegate?.engineDidFinishPlaying(self)
-        self.purge()
-      }
+    // 終了直後にdisplay linkがもう一度発火しても終了通知が二重に飛ばないよう、main待ちにせず同期的に落とす
+    displayLinkShouldPause = true
+    DispatchQueue.main.async {
+      self.fpsKeeper.clear()
+      self.updateDelegate?.didCompleted()
+      self.delegate?.engineDidFinishPlaying(self)
+      self.purge()
+    }
   }
 
   @objc private func update(_ link: CADisplayLink) {
@@ -144,7 +167,7 @@ internal class VideoEngine: NSObject {
   }
 
   private func updateFrame() {
-    guard !displayLink.isPaused else { return }
+    guard !displayLinkShouldPause else { return }
     if isCompleted {
       finish()
       return
